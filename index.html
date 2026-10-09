@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visor PDF Interactivo</title>
+
+  <!-- PDF.js y PageFlip -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden !important;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #ffffff;
+      transition: background 0.5s ease;
+    }
+
+    body {
+      background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px;
+    }
+
+    /* Temas Dinámicos */
+    body.theme-1 { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
+    body.theme-2 { background: radial-gradient(circle at center, #311b92 0%, #0d001a 100%); }
+    body.theme-3 { background: radial-gradient(circle at center, #004d40 0%, #001510 100%); }
+    body.theme-4 { background: radial-gradient(circle at center, #4a148c 0%, #1a0033 100%); }
+    body.theme-5 { background: radial-gradient(circle at center, #880e4f 0%, #20000e 100%); }
+
+    /* Top Bar */
+    .top-bar {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      z-index: 100;
+      padding: 6px 14px;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(8px);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .theme-picker {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .theme-circle {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .theme-circle:hover, .theme-circle.active {
+      transform: scale(1.25);
+      border-color: #ffffff;
+    }
+
+    .t1 { background: radial-gradient(circle, #38bdf8, #0f172a); }
+    .t2 { background: radial-gradient(circle, #7c3aed, #0d001a); }
+    .t3 { background: radial-gradient(circle, #10b981, #001510); }
+    .t4 { background: radial-gradient(circle, #d946ef, #1a0033); }
+    .t5 { background: radial-gradient(circle, #f43f5e, #20000e); }
+
+    /* Loader */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-left-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    /* Contenedor del Libro */
+    #viewport-wrapper {
+      width: 100%;
+      height: calc(100vh - 160px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden !important;
+      position: relative;
+    }
+
+    #flipbook-container {
+      display: none;
+      transition: transform 0.3s ease-out;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    #flipbook {
+      margin: 0 auto;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+    }
+
+    .page {
+      background-color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+      overflow: hidden;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Footer */
+    .footer-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      z-index: 100;
+      margin-top: auto;
+    }
+
+    .controls {
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      border-radius: 30px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      background: #334155;
+      color: #ffffff;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 500;
+      transition: background 0.2s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      user-select: none;
+    }
+
+    .btn:hover { background: #0284c7; }
+    .btn-audio { background: #10b981; }
+    .btn-audio:hover { background: #059669; }
+    .btn-download { background: #0284c7; }
+    .btn-download:hover { background: #0369a1; }
+
+    #page-info {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      min-width: 85px;
+      text-align: center;
+    }
+
+    .footer-title {
+      font-size: 0.65rem;
+      letter-spacing: 0.8px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      text-align: center;
+    }
+  </style>
+</head>
+<body class="theme-1">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="theme-picker">
+      <div class="theme-circle t1 active" onclick="setTheme(1)"></div>
+      <div class="theme-circle t2" onclick="setTheme(2)"></div>
+      <div class="theme-circle t3" onclick="setTheme(3)"></div>
+      <div class="theme-circle t4" onclick="setTheme(4)"></div>
+      <div class="theme-circle t5" onclick="setTheme(5)"></div>
+    </div>
+  </div>
+
+  <!-- Loader -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="status-text">Cargando PDF...</div>
+  </div>
+
+  <!-- Contenedor Libro -->
+  <div id="viewport-wrapper">
+    <div id="flipbook-container">
+      <div id="flipbook"></div>
+    </div>
+  </div>
+
+  <!-- Pie con Controles -->
+  <div class="footer-wrapper">
+    <div class="controls">
+      <button class="btn" id="prev-btn">Anterior</button>
+      <span id="page-info">Página 0 / 0</span>
+      <button class="btn" id="next-btn">Siguiente</button>
+
+      <!-- Zoom -->
+      <button class="btn" id="zoom-in-btn">+</button>
+      <button class="btn" id="zoom-out-btn">-</button>
+
+      <!-- Lectura PDF -->
+      <button class="btn btn-audio" id="speak-btn">Escuchar</button>
+
+      <!-- Descargar -->
+      <a class="btn btn-download" id="download-btn" href="#" download target="_blank">Descargar</a>
+    </div>
+
+    <div class="footer-title">
+      VISOR INTERACTIVO DE DOCUMENTOS
+    </div>
+  </div>
+
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    // URL del PDF fijo
+    const PDF_URL = 'https://raw.githubusercontent.com/intelliwebs/pdfs/main/CERROCLUB_v2.pdf';
+
+    let pageFlip = null;
+    let pageTexts = [];
+    let currentZoom = 1;
+
+    function setTheme(themeNum) {
+      document.body.className = `theme-${themeNum}`;
+      document.querySelectorAll('.theme-circle').forEach((el, idx) => {
+        el.classList.toggle('active', idx === themeNum - 1);
+      });
+    }
+
+    async function cargarPDF(pdfUrl) {
+      const loadingEl = document.getElementById('loading');
+      const statusText = document.getElementById('status-text');
+      const flipbookContainer = document.getElementById('flipbook-container');
+      const downloadBtn = document.getElementById('download-btn');
+      const flipbookEl = document.getElementById('flipbook');
+
+      loadingEl.style.display = 'flex';
+      statusText.innerText = 'Cargando archivo PDF...';
+      flipbookContainer.style.display = 'none';
+
+      downloadBtn.href = pdfUrl;
+
+      if (pageFlip) {
+        try {
+          pageFlip.destroy();
+        } catch(e) {
+          console.warn("Aviso al destruir flipbook anterior:", e);
+        }
+        pageFlip = null;
+      }
+
+      flipbookEl.innerHTML = '';
+      pageTexts = [];
+
+      try {
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        const pdf = await loadingTask.promise;
+        const totalPages = pdf.numPages;
+
+        const fragment = document.createDocumentFragment();
+
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          statusText.innerText = `Procesando página ${pageNum} de ${totalPages}...`;
+
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          pageTexts[pageNum] = textContent.items.map(item => item.str).join(' ');
+
+          const viewport = page.getViewport({ scale: 1.5 });
+          const pageDiv = document.createElement('div');
+          pageDiv.className = 'page';
+          pageDiv.setAttribute('data-density', pageNum === 1 ? 'hard' : 'soft');
+
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          pageDiv.appendChild(canvas);
+          fragment.appendChild(pageDiv);
+
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+        }
+
+        flipbookEl.appendChild(fragment);
+
+        pageFlip = new St.PageFlip(flipbookEl, {
+          width: 430,
+          height: 590,
+          size: 'fixed',
+          minWidth: 280,
+          maxWidth: 600,
+          minHeight: 380,
+          maxHeight: 800,
+          maxShadowOpacity: 0.3,
+          showCover: true,
+          usePortrait: false,
+          autoSize: false,
+          mobileScrollSupport: false
+        });
+
+        pageFlip.loadFromHTML(flipbookEl.querySelectorAll('.page'));
+        actualizarInfoPagina(1, totalPages);
+
+        pageFlip.on('flip', (e) => {
+          actualizarInfoPagina(e.data + 1, totalPages);
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+        });
+
+        loadingEl.style.display = 'none';
+        flipbookContainer.style.display = 'block';
+
+      } catch (err) {
+        console.error("Error al procesar el PDF:", err);
+        statusText.innerText = 'Error al abrir este PDF. Verifica que el enlace sea accesible.';
+        loadingEl.style.display = 'flex';
+      }
+    }
+
+    function actualizarInfoPagina(paginaActual, total) {
+      if (paginaActual === 1) {
+        document.getElementById('page-info').innerText = `Portada (1 / ${total})`;
+      } else {
+        const pagIzquierda = paginaActual % 2 === 0 ? paginaActual : paginaActual - 1;
+        const pagDerecha = pagIzquierda + 1 <= total ? pagIzquierda + 1 : total;
+        document.getElementById('page-info').innerText = `Pág. ${pagIzquierda}-${pagDerecha} / ${total}`;
+      }
+    }
+
+    // Zoom & Speech
+    document.getElementById('prev-btn').addEventListener('click', () => pageFlip && pageFlip.flipPrev());
+    document.getElementById('next-btn').addEventListener('click', () => pageFlip && pageFlip.flipNext());
+    document.getElementById('zoom-in-btn').addEventListener('click', () => cambiarZoom(0.15));
+    document.getElementById('zoom-out-btn').addEventListener('click', () => cambiarZoom(-0.15));
+
+    function cambiarZoom(delta) {
+      currentZoom = Math.min(Math.max(0.7, currentZoom + delta), 1.5);
+      document.getElementById('flipbook-container').style.transform = `scale(${currentZoom})`;
+    }
+
+    document.getElementById('speak-btn').addEventListener('click', () => {
+      if ('speechSynthesis' in window) {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+          return;
+        }
+        const currentPageIndex = pageFlip.getCurrentPageIndex() + 1;
+        let texto = pageTexts[currentPageIndex] || '';
+        if (currentPageIndex > 1 && pageTexts[currentPageIndex + 1]) {
+          texto += ' ' + pageTexts[currentPageIndex + 1];
+        }
+        if (texto.trim().length > 0) {
+          const utterance = new SpeechSynthesisUtterance(texto);
+          utterance.lang = 'es-ES';
+          utterance.rate = 0.95;
+          window.speechSynthesis.speak(utterance);
+        } else {
+          alert('No se encontró texto en esta página.');
+        }
+      }
+    });
+
+    // Iniciar carga del PDF al cargar la ventana
+    window.addEventListener('load', () => cargarPDF(PDF_URL));
+  </script>
+</body>
+</html>
